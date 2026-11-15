@@ -177,3 +177,66 @@ class TokenRefreshView(BaseAPIView):
                     status= status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
             )
+
+class ValidateTokenView(BaseAPIView):
+    """Token validation"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        user = request.user 
+        
+        # Get token from Authorization header
+        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+        if auth_header.startswith('Bearer '):
+            token = auth_header.split(' ')[1]
+            
+            success, response_data, status_code = AuthenticationService.validate_token(token, user)
+            
+            return Response(
+                standardized_reponse(**response_data),
+                status = status_code
+            )
+            
+        return Response(
+            standardized_reponse(success= False, error="No token provided"),
+            status=status.HTTP_400_BAD_REQUEST
+        )
+        
+class LogoutView(BaseAPIView):
+    """Logout endpoint that invalidates tokens"""
+    permission_classes = [IsAuthenticated]
+    def post(self, request):
+        try:
+            user = request.user
+            refresh_token = None
+            
+            if 'refresh_token' in request.data:
+                refresh_token = request.data.get('refresh_token')
+                
+            elif settings.JWT_COOKIE_SECURE:
+                refresh_token = request.COOKIES.get(settings.JWT_COOKIE_NAME)
+            
+            success, response_data, status_code = AuthenticationService.logout(user, refresh_token)
+            
+            response = Response(standardized_reponse(**response_data))
+
+            if settings.JWT_COOKIE_SECURE:
+                response.delete_cookie(
+                    key = settings.JWT_COOKIE_NAME,
+                    path= '/',
+                    domain= settings.SESSION_COOKIE_DOMAIN
+                )
+            
+            return response
+        
+        except Exception as e:
+            logger.error(f"Logout error: {str(e)}")
+            logger.error(traceback.format_exc())
+            
+            response = Response(
+                standardized_reponse(
+                    success=True, 
+                    message="Logout processed",
+                    status = status.HTTP_200_OK
+                )
+            )

@@ -247,3 +247,52 @@ class AuthenticationService:
                 "success": False,
                 "error": "An error occured during token refresh"
             }, 500
+            
+    @staticmethod
+    def validate_token(token, user):
+        """Validate a token and check if it belongs to the user"""
+        is_valid, user_id, token_type = TokenManager.validate_token(token)
+        
+        if not is_valid or user_id != user.id:
+            logger.warning(f"Token validation failed: expected user {user.id}, got {user_id}")
+            return False, {"success": False, "error": "Token validation failed"}, 401
+        
+        from authentication.verification.services import EmailVerificationService
+        success, verification_response, _ = EmailVerificationService.check_verification_status(user)
+        
+        if not success:
+            logger.error(f"Error checking verification status for user {user.id}")
+            is_verified = user.is_verified
+        else:
+            is_verified = verification_response.get('data', {}).get('is_verified', user.is_verified)
+            
+        logger.info(f"Token validation retrieved verification status for user {user.id} : is_verified={is_verified}")
+        
+        return True, {
+            "success": True,
+            "data": {
+                'valid': True,
+                'user_id': user.id,
+                'email_verified': is_verified
+            }
+        }, 200
+        
+    @staticmethod
+    def logout(user, refresh_token = None):
+        """Handle user logout, invalidating tokens as needed"""
+        if refresh_token:
+            try:
+                token = RefreshToken(refresh_token)
+                jti = token.get('jti')
+                if jti:
+                    TokenManager.blacklisted_token(jti)
+                    logger.info(f"Token blacklisted during logout: {jti}")
+            except Exception as e:
+                logger.warning(f"Error blacklisting token during logout: {str(e)}")
+                
+        logger.info(f"User logged out: {user.id}")
+        return True, {
+            "success": True,
+            "message": "Successfully logged out"
+        }, 200
+        
