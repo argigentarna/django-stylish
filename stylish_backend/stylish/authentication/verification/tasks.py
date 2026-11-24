@@ -19,7 +19,7 @@ def send_verification_email_task(self, user_id: int):
     try:
         user = User.objects.get(id=user_id)
         if not user.is_verified:
-            logger.info(f"Executing verificationb email task for user: {user.email}")
+            logger.info(f"Executing verification email task for user: {user.email}")
             EmailService.send_verification_email(user)
         else:
             logger.info(f"Skipping verification email for already verified user: {user.email}")
@@ -28,4 +28,27 @@ def send_verification_email_task(self, user_id: int):
         
     except Exception as e:
         logger.error(f"Failed to send verification email for user {user_id} on attempt {self.request.retries}: {e}")
+        raise e
+    
+shared_task(bind = True,
+    bind = True,
+    autoretry_for = (Exception,),
+    retry_kwargs = {'max_retries': 3},
+    retry_backoff = True,
+    retry_back_off_max = 60,
+    name = "authentication.verification.send_password_reset_email"
+)
+def send_password_reset_email_task(self, user_id: int):
+    """Celery task to send a password reset email."""
+    try:
+        user = User.objects.get(id=user_id)
+        if not user.is_verified:
+            logger.info(f"Executing password email task for user: {user.email}")
+            EmailService.send_password_reset_email(user)
+            
+    except User.DoesNotExist:
+        logger.warning(f"User with ID {user_id} not found. Cannot send password reset email.")
+        
+    except Exception as e:
+        logger.error(f"Failed to send password reset email for user {user_id} on attempt {self.request.retries}: {e}")
         raise e
